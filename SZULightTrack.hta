@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>深大光电·大一每日行动台</title>
+<HTA:APPLICATION ID="SZULightTrack" APPLICATIONNAME="SZULightTrack" BORDER="thin" CAPTION="yes" SHOWINTASKBAR="yes" SINGLEINSTANCE="yes" WINDOWSTATE="normal" />
+<style>
+body{margin:0;background:#09131f;color:#eaf2fa;font:15px "Microsoft YaHei",Arial}#app{max-width:1020px;margin:0 auto;padding:22px}h1{margin:0 0 4px;font-size:26px}.sub{color:#91a7bc;margin-bottom:18px}.grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}.card{background:#102337;border:1px solid #28455f;border-radius:14px;padding:17px}.salary{font-size:38px;color:#78e3ad;font-weight:bold;margin:7px 0}.muted{color:#9eb4c6;font-size:13px}button{border:0;border-radius:8px;background:#1e6cb3;color:#fff;padding:8px 12px;margin:4px 2px;cursor:pointer}button.alt{background:#28455f}input,textarea{background:#0a1928;color:white;border:1px solid #365974;border-radius:7px;padding:7px;font-family:inherit}input[type=checkbox]{transform:scale(1.2);margin-right:12px}.task{padding:10px 4px;border-bottom:1px solid #244057}.task.done{opacity:.55;text-decoration:line-through}.task small{color:#9eb4c6;display:block;margin-left:28px;margin-top:3px}.tag{font-size:12px;border-radius:12px;padding:2px 8px;background:#204b70;color:#bde3ff;float:right}.warn{background:#4d3722;color:#ffd7a2;padding:10px;border-radius:8px;margin:10px 0}.ok{background:#163e32;color:#b6f2d1;padding:10px;border-radius:8px;margin:10px 0}textarea{width:96%;height:56px;margin-top:8px}.wide{grid-column:1/-1}#date{font-weight:bold}.hide{display:none}label{display:block;margin:7px 0}
+</style>
+</head>
+<body><div id="app">
+<h1>深大光电 · 大一每日行动台</h1><div class="sub">激光/光电硬件主线 · FPGA 与电路副线 · 本地离线保存</div>
+<div class="grid">
+ <div class="card"><div>今天：<span id="date"></span> <button class="alt" onclick="changeDay(-1)">‹ 前一天</button><button class="alt" onclick="changeDay(1)">后一天 ›</button></div><div id="today"></div><div id="completion"></div></div>
+ <div class="card"><div class="muted">目前薪资（虚拟）</div><div class="salary" id="salary">¥0.00</div><div id="stats" class="muted"></div><hr style="border-color:#28455f"><b>年度阶段</b><div id="phase" class="muted" style="margin-top:8px"></div><button onclick="openSettings()">设置学年/课程模板</button><button class="alt" onclick="showHistory()">查看记录</button></div>
+ <div class="card wide"><b>今日完成凭证/复盘</b><div class="muted">必须填写后才可结算当天薪资；写下笔记链接、实验数据、题目页数或遇到的问题。</div><textarea id="proof" placeholder="例：完成《高数》课后题 1.2 第3、5、8题；LTspice TIA 仿真截图已保存……"></textarea><br><button onclick="saveProof()">保存复盘</button><span id="saveMsg" class="muted"></span></div>
+ </div>
+<div class="card hide" id="settings"><h3>课表编辑（已按你提供的深大课表截图录入）</h3><label>学年开始日：<input id="startDate" type="date"></label><label>周一课程：<input id="mon" size="90"></label><label>周二课程：<input id="tue" size="90"></label><label>周三课程：<input id="wed" size="90"></label><label>周四课程：<input id="thu" size="90"></label><label>周五课程：<input id="fri" size="90"></label><div class="muted">每行可直接修改。格式建议：第1–2节 课程名（5–18周）；第3–4节 课程名。自主学习会优先排在工作日第5–6节（截图中该时段无课）；周末安排上午。临时调课后点击“保存设置”。</div><button onclick="saveSettings()">保存设置</button><button class="alt" onclick="openSettings()">关闭</button></div>
+<div class="card hide" id="history"></div>
+</div>
+<script>
+/* Windows HTA may run an IE engine without native JSON support. */
+if(!window.JSON){
+ window.JSON={
+  parse:function(text){return eval('('+text+')');},
+  stringify:function(value){
+   function esc(s){return '"'+String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\t/g,'\\t')+'"';}
+   function enc(v){var i,a;if(v===null)return 'null';if(typeof v==='string')return esc(v);if(typeof v==='number'||typeof v==='boolean')return String(v);if(Object.prototype.toString.call(v)==='[object Array]'){a=[];for(i=0;i<v.length;i++)a.push(enc(v[i]));return '['+a.join(',')+']';}if(typeof v==='object'){a=[];for(i in v)if(v.hasOwnProperty(i))a.push(esc(i)+':'+enc(v[i]));return '{'+a.join(',')+'}';}return 'null';}
+   return enc(value);
+  }
+ };
+}
+var fso=new ActiveXObject('Scripting.FileSystemObject');
+var shell=new ActiveXObject('WScript.Shell');
+var dataFile=shell.ExpandEnvironmentStrings('%APPDATA%')+'\\SZULightTrack-data.json';
+function actualCourses(){return {1:'第3–4节 大学英语(1)（5–18周）；第7–8节 工程制图（单双周以教务课表为准）；第11–12节、13–14节 大学计算机',2:'第1–2节 工程制图；第3–4节 高等数学A(1)；第7–8节 思想道德与法治；第9–10节 工程制图；第11–12节 大学计算机',3:'第1–2节 大学英语(1)；第3–4节 网球俱乐部；第7–9节 线性代数；第11–12节 专业导论',4:'第1–2节 高等数学A(1)；第3–4节 网球俱乐部；第11–12节 C程序设计',5:'第1–2节 C程序设计；第3–4节 高等数学A(1)；第7–10节 大学计算机；第11–12节 大学生心理健康（第8/9/12/13周）'};}
+var state={settings:{start:'2026-09-01',scheduleVersion:2,courses:actualCourses()},days:{}};
+function load(){try{if(fso.FileExists(dataFile)){var t=fso.OpenTextFile(dataFile,1,false,-1);state=JSON.parse(t.ReadAll());t.Close();}}catch(e){alert('记录读取失败：'+e.message)}}
+function save(){var t=fso.OpenTextFile(dataFile,2,true,-1);t.Write(JSON.stringify(state));t.Close()}
+function iso(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)}
+var shown=new Date(); shown.setHours(12,0,0,0);
+function normalizeState(){if(!state||typeof state!=='object')state={};if(!state.settings)state.settings={};if(!state.settings.courses||state.settings.scheduleVersion!==2){state.settings.courses=actualCourses();state.settings.scheduleVersion=2;}if(!state.days)state.days={};}
+function safeStartDate(){normalizeState();var raw=state.settings.start?String(state.settings.start):'';var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);if(!m){state.settings.start='2026-09-01';return new Date(2026,8,1,12,0,0,0);}var dt=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12,0,0,0);if(isNaN(dt.getTime())){state.settings.start='2026-09-01';return new Date(2026,8,1,12,0,0,0);}return dt}
+function daysSince(d){var s=safeStartDate();return Math.floor((d.getTime()-s.getTime())/86400000)}
+function inRange(n,a,b){return n>=a&&n<=b} function dow(d){return d.getDay()}
+function phase(n){if(n<0)return '开学前：请先在“设置”中填入实际选课课表，并准备笔记库、Git仓库与基础工具。';if(n<112)return '第一学期：数理、C、电路与实验习惯；第6周后开始实验室观察。';if(n<140)return '寒假：Python数据处理、LTspice、Verilog基础，每天总学习不超过3小时。';if(n<252)return '第二学期：应用光学/电路基础深化；完成光强采集仪原型并开始竞赛准备。';if(n<280)return '暑假：4–6周校内科研训练或高质量见习；整理年度作品集。';return '学年结束：复盘，导出作品集，为大二实验室选择做准备。'}
+function studyTask(n,weekday,vacation){
+ var list,idx=n%7,mins=weekday?'60分钟':'90分钟';
+ if(n<35) list=[
+  ['C语言基础｜变量、分支与循环','B站：翁恺《C语言程序设计》对应小节；练习：C语言网或PTA。步骤：看20分→手敲25分→调试15分。交付：1个.c文件和3条注释。'],
+  ['高数基础｜极限、导数或积分的当天薄弱点','渠道：深大课堂课件+教材课后题。步骤：回看定义15分→做2题35分→订正10分。交付：错题编号、错误原因和正确解法。'],
+  ['大学物理｜运动学/力学建模','渠道：深大课件+教材习题；补充：MIT OCW 8.01。步骤：整理公式15分→做2题35分→量纲检查10分。交付：一页公式卡。'],
+  ['Python数据基础｜变量、列表、函数','渠道：Python官方教程中文文档或《Python编程：从入门到实践》。步骤：阅读20分→Jupyter练习30分→保存10分。交付：notebook 1份。'],
+  ['电路启蒙｜KCL、KVL与等效电阻','渠道：B站电路分析基础课程+《电路》第5版。步骤：推导20分→做3题30分→标出电流方向10分。交付：手写/电子推导页。'],
+  ['仪器与安全｜万用表、示波器、激光安全','渠道：深大实验课讲义+Keysight/Tektronix基础视频。步骤：读SOP20分→画接线图20分→列5条风险20分。交付：个人实验安全清单。'],
+  ['工程记录｜Git/Gitee与学习笔记','渠道：Pro Git 中文版。步骤：整理本周文件25分→提交记录20分→写复盘15分。交付：一次有说明的commit。']
+ ];
+ else if(n<112) list=[
+  ['C语言进阶｜函数、数组、指针调试','渠道：翁恺课程+PTA。步骤：看15分→完成1题35分→用断点检查10分。交付：可编译代码与运行截图。'],
+  ['大学物理｜电场、电势与电路连接','渠道：深大课件+教材。步骤：概念卡15分→2题35分→错因10分。交付：电场/电势关系图。'],
+  ['LTspice｜RC/RL/RLC瞬态与交流扫描','渠道：LTspice官方帮助+Analog Devices教程。步骤：搭图20分→扫频25分→读波形15分。交付：.asc文件和1张Bode/波形图。'],
+  ['Python｜NumPy数组与Matplotlib作图','渠道：NumPy、Matplotlib官方教程。步骤：跟做20分→处理一组数据30分→标注图10分。交付：带坐标、单位、标题的PNG图。'],
+  ['电路分析｜戴维南/诺顿等效与一阶响应','渠道：《电路》教材+深大课堂。步骤：推导20分→2题30分→对照答案10分。交付：等效过程照片或笔记。'],
+  ['光学预备｜几何光学、焦距与成像','渠道：应用光学教材导读+Thorlabs教程。步骤：读20分→画2张光路图30分→总结10分。交付：标注物距像距的光路图。'],
+  ['实验室准备｜读一篇深大激光团队论文摘要','渠道：郭春雨/文侨/邵永红教授官网论文列表。步骤：摘要15分→图1/实验方法25分→写问题20分。交付：200字阅读卡和2个问题。']
+ ];
+ else if(n<140) list=[
+  ['Python假期专项｜读CSV并画光强曲线','渠道：PyVISA/Python官方文档、Matplotlib教程。步骤：样例20分→编码45分→保存25分。交付：csv_reader.py与曲线PNG。'],
+  ['LTspice假期专项｜运放反相/同相放大','渠道：TI Precision Labs + LTspice教程。步骤：看20分→仿真45分→增益/饱和分析25分。交付：仿真图和3条结论。'],
+  ['Verilog入门｜模块、端口、组合逻辑','渠道：HDLBits+《Verilog HDL入门》。步骤：学习20分→完成2题50分→保存20分。交付：.v和testbench。'],
+  ['Verilog入门｜时序逻辑、复位与计数器','渠道：HDLBits。步骤：阅读20分→编码50分→仿真20分。交付：计数器波形截图。'],
+  ['PCB预备｜KiCad原理图与封装概念','渠道：KiCad官方Getting Started。步骤：教程25分→绘制30分→ERC检查35分。交付：LED限流板原理图。'],
+  ['工程英语｜读光电探测器datasheet','渠道：Thorlabs/Excelitas公开datasheet。步骤：查术语20分→读指标40分→摘要30分。交付：响应度、暗电流、带宽指标表。'],
+  ['寒假复盘｜整合三个工具的微项目','渠道：此前代码与仿真。步骤：整理30分→补缺40分→写报告20分。交付：一页“光强采集仪预研”说明。']
+ ];
+ else if(n<190) list=[
+  ['模拟前端｜运放负反馈、偏置与饱和','渠道：TI Precision Labs+《模电》。步骤：视频20分→笔记15分→习题25分。交付：增益与饱和条件卡片。'],
+  ['TIA核心｜光电二极管与跨阻放大器原理','渠道：TI/ADI TIA应用笔记。步骤：读20分→估算Rf/Cf20分→仿真20分。交付：TIA参数计算页。'],
+  ['LTspice｜TIA直流工作点与交流带宽','渠道：ADI应用笔记。步骤：建模20分→AC分析25分→稳定性15分。交付：Bode图和带宽结论。'],
+  ['光电器件｜光敏二极管响应度与噪声','渠道：Hamamatsu Photonics技术资料。步骤：阅读25分→单位换算20分→例题15分。交付：光功率到电流换算表。'],
+  ['Python实验数据｜均值、标准差、拟合','渠道：NumPy/Matplotlib官方文档。步骤：样例15分→代码30分→结果解释15分。交付：含误差棒的图。'],
+  ['应用光学｜薄透镜、NA与光斑','渠道：应用光学教材+Thorlabs教程。步骤：读20分→算2题30分→画光路10分。交付：透镜选型计算页。'],
+  ['项目文档｜光强采集仪需求书v0.1','渠道：参考工程需求文档模板。步骤：目标15分→指标25分→风险20分。交付：一页需求、接口与验收标准。']
+ ];
+ else if(n<224) list=[
+  ['Verilog｜组合逻辑、阻塞/非阻塞赋值','渠道：HDLBits+AMD/Xilinx入门资料。步骤：学习20分→练习30分→仿真10分。交付：模块与波形。'],
+  ['Verilog｜FSM状态机与按键消抖','渠道：HDLBits。步骤：画状态图15分→编码35分→仿真10分。交付：状态图和.v文件。'],
+  ['FPGA｜时钟、复位与同步设计','渠道：AMD/Xilinx UG949/入门教程。步骤：读20分→复位电路25分→总结15分。交付：同步复位检查表。'],
+  ['FPGA｜UART串口收发','渠道：HDLBits或正点原子公开教程。步骤：协议15分→RTL35分→testbench10分。交付：UART波形截图。'],
+  ['FPGA｜FIFO与跨时钟域基础','渠道：AMD/Xilinx CDC资料。步骤：概念20分→例程25分→风险清单15分。交付：CDC常见错误清单。'],
+  ['数字电路｜ADC采样、采样率与量化','渠道：ADI MT-002/MT-003教程。步骤：读20分→算题25分→总结15分。交付：采样率/分辨率选型表。'],
+  ['工程记录｜FPGA学习周报','渠道：本周代码。步骤：整理20分→注释20分→复盘20分。交付：README更新与提交记录。']
+ ];
+ else if(n<252) list=[
+  ['KiCad｜原理图：光敏二极管+TIA','渠道：KiCad官方教程+此前TIA仿真。步骤：绘图25分→注释20分→ERC15分。交付：原理图PDF。'],
+  ['PCB｜去耦、回流路径与模拟数字分区','渠道：TI PCB Layout指南。步骤：阅读20分→标注布局25分→检查15分。交付：布局草图。'],
+  ['系统联调｜ADC→FPGA→上位机数据链路','渠道：芯片datasheet+串口协议资料。步骤：接口图20分→伪代码25分→风险15分。交付：系统框图与接口表。'],
+  ['光电竞赛预备｜拆解往届光电设计题','渠道：全国大学生光电设计竞赛官网历届题。步骤：读题15分→需求25分→方案20分。交付：一页方案比较。'],
+  ['测试方法｜误差、重复性与实验记录','渠道：实验课讲义/Keysight测量基础。步骤：阅读20分→表格25分→指标15分。交付：测试记录模板。'],
+  ['工程英语｜读运放或ADC datasheet','渠道：TI/ADI官网。步骤：指标20分→选型20分→摘要20分。交付：关键参数对比表。'],
+  ['作品集｜整理光强采集仪迭代','渠道：本学年全部材料。步骤：选图20分→写说明25分→提交15分。交付：项目README v1。']
+ ];
+ else list=[
+  ['暑期作品集｜整理光强采集仪系统框图','渠道：本学年Git、实验记录。步骤：整理30分→补图30分→复盘30分。交付：系统框图PNG。'],
+  ['暑期科研训练｜读激光器/光电硬件论文','渠道：深大课题组官网、Optics Express。步骤：摘要20分→方法35分→问题35分。交付：论文阅读卡。'],
+  ['暑期工程｜完善TIA/ADC/FPGA任一模块','渠道：TI/ADI/AMD官方资料。步骤：调试30分→测试30分→记录30分。交付：测试截图与结论。'],
+  ['暑期职业准备｜更新一页简历','渠道：学校就业指导模板。步骤：列成果30分→量化30分→校对30分。交付：PDF简历v1。'],
+  ['暑期实验室准备｜给意向团队写联系邮件草稿','渠道：深大教授官网。步骤：研究方向20分→邮件40分→附件30分。交付：邮件草稿和一页项目集。'],
+  ['暑期复盘｜梳理大一能力缺口','渠道：课程、作品、竞赛清单。步骤：盘点30分→排序30分→计划30分。交付：大二前90天计划。'],
+  ['暑期休整｜技术笔记归档与下周计划','渠道：个人笔记库。步骤：归档30分→备份20分→计划40分。交付：目录和下周看板。']
+ ];
+ if(!list||!list.length)list=[['每日基础复盘','渠道：深大课程资料与此前学习笔记。步骤：回顾30分→练习20分→整理10分。交付：一条学习记录。']];
+ if(idx<0||idx>=list.length||!list[idx])idx=0;
+ var x=list[idx]; return {title:x[0],time:mins,detail:x[1]};
+}
+function task(title,time,kind,why){return {title:title,time:time,kind:kind,why:why}}
+function freeStudySlot(w,vacation){if(vacation)return '建议时段：09:30–11:00（假期上午）';if(w>=1&&w<=5)return '建议时段：第5–6节（当天无课，14:00–15:40）';return '建议时段：09:30–11:00（周末上午）'}
+function allChecked(ts, checks){for(var i=0;i<ts.length;i++){if(!checks[i])return false;}return ts.length>0}
+function tasksFor(d){var n=daysSince(d), w=dow(d), arr=[];if(n<0){return [task('设置实际深大课表与本学期目标','20分钟','准备','开学前仅需完成一次设置'),task('建立学习笔记库与Git/Gitee仓库','40分钟','准备','保存每日代码、实验与复盘')]}
+var weekday=w>=1&&w<=5, vacation=(n>=112&&n<140)||(n>=252&&n<280);
+if(weekday&&!vacation){var c=state.settings.courses[w]||'';if(c)arr.push(task('校内课程：'+c,'按课表','课程','按深大教务系统当学期实际课程执行；课后标记已出勤/完成。'));arr.push(task('当天课程复盘：整理笔记、完成2–4题或1页总结','45分钟','课程复盘','优先处理高数、大学物理、C语言的当天薄弱点。'))}
+if(!weekday&&!vacation)arr.push(task('周复盘：整理本周错题、笔记与下周材料','60分钟','复盘','不补无效时长；只整理实际遗留问题。'));
+var learn=studyTask(n,weekday,vacation);arr.push(task('自主学习｜'+learn.title,learn.time,'自主学习',freeStudySlot(w,vacation)+'；'+learn.detail));
+if(n>=35&&n<112&&w==3)arr.push(task('去校内实验室/参加组会旁听：观察仪器与安全规范','90分钟','实验室','先联系郭春雨、文侨、邵永红等团队的研究生；无预约则改为阅读实验室论文1篇。'));
+if(n>=140&&n<252&&(w==3||w==6))arr.push(task('实验室/作品项目：光强采集仪（光敏二极管、TIA、ADC或数据处理）','120分钟','实验室','周三优先校内实验室；周六可在宿舍做仿真、代码和报告。'));
+if(vacation&&weekday)arr.push(task(n<140?'寒假项目：完成Python/LTspice/Verilog一个小练习':'暑期科研训练：光强采集仪、实验数据或企业见习记录','90分钟','项目','暑假前6周优先向校内实验室申请4–6周科研训练；未获机会则完成公开作品集。'));
+if(w==0)arr.push(task('健康与规划：运动 + 检查下周课程/实验预约','45分钟','健康','不以熬夜补进度；保持能长期执行的节奏。'));
+return arr}
+function dayRecord(key){if(!state.days[key])state.days[key]={checks:{},proof:'',paid:false};return state.days[key]}
+function render(){var key=iso(shown), r=dayRecord(key), ts=tasksFor(shown), n=daysSince(shown);document.getElementById('date').innerHTML=shown.toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long'});document.getElementById('phase').innerText=phase(n);var h='';for(var i=0;i<ts.length;i++){var t=ts[i], ck=r.checks[i]?'checked':'';h+='<div class="task '+(ck?'done':'')+'"><label><input type="checkbox" '+ck+' onchange="toggle('+i+',this.checked)"><b>'+t.title+'</b><span class="tag">'+t.kind+'</span><small>建议用时：'+t.time+'；'+t.why+'</small></label></div>'}document.getElementById('today').innerHTML=h;document.getElementById('proof').value=r.proof||'';var complete=allChecked(ts,r.checks);var finished=0;for(var j=0;j<ts.length;j++){if(r.checks[j])finished++;}var msg=complete?'所有任务已勾选。填写并保存复盘后可结算 ¥205.48。':'完成 '+finished+'/'+ts.length+' 项；未完成时不会结算当天薪资。';document.getElementById('completion').innerHTML='<div class="'+(complete?'ok':'warn')+'">'+msg+'</div>';salary();save()}
+function toggle(i,v){var r=dayRecord(iso(shown));r.checks[i]=v;save();render()}
+function saveProof(){var r=dayRecord(iso(shown));r.proof=document.getElementById('proof').value.replace(/^\s+|\s+$/g,'');var ts=tasksFor(shown), all=allChecked(ts,r.checks);if(all&&r.proof.length>=12&&!r.paid){r.paid=true;document.getElementById('saveMsg').innerHTML=' 已结算今日 ¥205.48。';}else if(all&&r.proof.length<12){document.getElementById('saveMsg').innerHTML=' 请写至少12个字的完成凭证后结算。'}else document.getElementById('saveMsg').innerHTML=' 已保存；完成全部任务后才能结算。';save();render()}
+function salary(){var count=0;for(var k in state.days)if(state.days[k].paid)count++;document.getElementById('salary').innerHTML='¥'+(count*205.48).toFixed(2);document.getElementById('stats').innerHTML='已完整结算 '+count+' 天 · 每完整完成一天 +¥205.48';}
+function changeDay(x){shown.setDate(shown.getDate()+x);render()}function openSettings(){var e=document.getElementById('settings');e.className=e.className.indexOf('hide')>=0?'card':'card hide';document.getElementById('startDate').value=state.settings.start;var names=['mon','tue','wed','thu','fri'];for(var i=0;i<names.length;i++)document.getElementById(names[i]).value=state.settings.courses[i+1]||'';}
+function saveSettings(){state.settings.start=document.getElementById('startDate').value;var names=['mon','tue','wed','thu','fri'];for(var i=0;i<names.length;i++)state.settings.courses[i+1]=document.getElementById(names[i]).value;state.settings.scheduleVersion=2;save();openSettings();render()}
+function showHistory(){var e=document.getElementById('history'),list=[];for(var k in state.days)if(state.days[k].paid)list.push(k);list.sort().reverse();e.className=e.className.indexOf('hide')>=0?'card':'card hide';e.innerHTML='<h3>已结算日期</h3>'+ (list.length?list.join('、'):'暂无。')+'<br><button class="alt" onclick="showHistory()">关闭</button>'}
+load();normalizeState();render();
+</script></body></html>
